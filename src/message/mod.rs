@@ -3,8 +3,8 @@
 use std::io;
 use std::net::SocketAddr;
 
-use net::connector::UdpConnector;
-use net::IpVersionMode;
+use crate::net::connector::UdpConnector;
+use crate::net::IpVersionMode;
 
 mod notify;
 mod search;
@@ -14,10 +14,10 @@ pub mod multicast;
 
 use get_if_addrs;
 
-pub use message::multicast::Multicast;
-pub use message::search::{SearchRequest, SearchResponse, SearchListener};
-pub use message::notify::{NotifyMessage, NotifyListener};
-pub use message::listen::Listen;
+pub use crate::message::multicast::Multicast;
+pub use crate::message::search::{SearchRequest, SearchResponse, SearchListener};
+pub use crate::message::notify::{NotifyMessage, NotifyListener};
+pub use crate::message::listen::Listen;
 
 /// Multicast Socket Information
 pub const UPNP_MULTICAST_IPV4_ADDR: &'static str = "239.255.255.250";
@@ -96,10 +96,10 @@ fn all_local_connectors(multicast_ttl: Option<u32>, filter: &IpVersionMode) -> i
     map_local(|&addr| match (filter, addr) {
         (&IpVersionMode::V4Only, SocketAddr::V4(n)) |
         (&IpVersionMode::Any, SocketAddr::V4(n)) => {
-            Ok(Some(try!(UdpConnector::new((*n.ip(), 0), multicast_ttl))))
+            Ok(Some(UdpConnector::new((*n.ip(), 0), multicast_ttl)?))
         }
         (&IpVersionMode::V6Only, SocketAddr::V6(n)) |
-        (&IpVersionMode::Any, SocketAddr::V6(n)) => Ok(Some(try!(UdpConnector::new(n, multicast_ttl)))),
+        (&IpVersionMode::Any, SocketAddr::V6(n)) => Ok(Some(UdpConnector::new(n, multicast_ttl)?)),
         _ => Ok(None),
     })
 }
@@ -108,9 +108,10 @@ fn all_local_connectors(multicast_ttl: Option<u32>, filter: &IpVersionMode) -> i
 ///
 /// This method filters out _loopback_ and _global_ addresses.
 fn map_local<F, R>(mut f: F) -> io::Result<Vec<R>>
-    where F: FnMut(&SocketAddr) -> io::Result<Option<R>>
+where
+    F: FnMut(&SocketAddr) -> io::Result<Option<R>>,
 {
-    let addrs_iter = try!(get_local_addrs());
+    let addrs_iter = get_local_addrs()?;
 
     let mut obj_list = Vec::with_capacity(addrs_iter.len());
 
@@ -118,13 +119,13 @@ fn map_local<F, R>(mut f: F) -> io::Result<Vec<R>>
         trace!("Found {}", addr);
         match addr {
             SocketAddr::V4(n) if !n.ip().is_loopback() => {
-                if let Some(x) = try!(f(&addr)) {
+                if let Some(x) = f(&addr)? {
                     obj_list.push(x);
                 }
             }
-            // Filter all loopback and global IPv6 addresses
-            SocketAddr::V6(n) if !n.ip().is_loopback() && !n.ip().is_global() => {
-                if let Some(x) = try!(f(&addr)) {
+            // Filter all loopback IPv6 addresses
+            SocketAddr::V6(n) if !n.ip().is_loopback() => {
+                if let Some(x) = f(&addr)? {
                     obj_list.push(x);
                 }
             }
@@ -139,7 +140,7 @@ fn map_local<F, R>(mut f: F) -> io::Result<Vec<R>>
 ///
 /// If any of the `SocketAddr`'s fail to resolve, this function will not return an error.
 fn get_local_addrs() -> io::Result<Vec<SocketAddr>> {
-    let iface_iter = try!(get_if_addrs::get_if_addrs()).into_iter();
+    let iface_iter = get_if_addrs::get_if_addrs()?.into_iter();
     Ok(iface_iter.filter_map(|iface| Some(SocketAddr::new(iface.addr.ip(), 0)))
         .collect())
 }
